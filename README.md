@@ -1,78 +1,80 @@
-РЕАЛИЗАЦИЯ ПАТТЕРНА SAGA ВНУТРИ МИКРОСЕРВИСА (CHECKOUT WORKFLOW)
+SAGA PATTERN IMPLEMENTATION WITHIN A SINGLE MICROSERVICE (CHECKOUT WORKFLOW)
+PROJECT OVERVIEW
 
+This project demonstrates a programmatic implementation of the Saga pattern
+using the Go programming language to manage a transactional checkout workflow.
+Within a single microservice, the pattern is utilized to ensure data
+consistency across multiple domain areas (Payment, Inventory, and Shipping)
+without relying on heavy distributed database transactions.
 
-Данный проект представляет собой программную реализацию паттерна Saga на языке Go
-для управления транзакционным процессом оформления заказа (Checkout). В рамках
-одного микросервиса паттерн используется для обеспечения согласованности данных
-между различными доменными областями (Оплата, Склад, Доставка) без применения
-распределенных транзакций БД.
+The implementation follows an Orchestration-based Saga approach, where a
+central component manages the sequence of steps and initiates compensating
+actions in the event of failure.
 
-Реализован подход на основе оркестрации (Orchestration-based Saga), где
-центральный компонент управляет последовательностью шагов и инициирует
-компенсирующие действия в случае возникновения ошибок.
+ARCHITECTURAL DECISIONS
 
-АРХИТЕКТУРНЫЕ РЕШЕНИЯ
+The project is structured into logical layers following Clean Architecture
+principles:
 
-Проект разделен на логические слои согласно принципам чистой архитектуры:
+"saga" Package (Core Engine): Contains abstractions and a universal execution
+mechanism. It is completely decoupled from business logic and can be reused
+for other transactional processes.
 
-Пакет "saga" (Core Engine): Содержит абстракции и универсальный механизм
-выполнения. Он полностью отделен от бизнес-логики и может быть переиспользован
-в других процессах.
+"service" Package (Domain Logic): Contains implementations of specific
+business steps (PaymentStep, InventoryStep, ShippingStep). Each implementation
+encapsulates execution logic (Execute) and reversal logic (Compensate).
 
-Пакет "service" (Domain Logic): Содержит реализации конкретных этапов
-бизнес-процесса (PaymentStep, InventoryStep, ShippingStep). Каждая реализация
-инкапсулирует логику выполнения (Execute) и логику отката (Compensate).
+Entry Point (cmd/checkout): Initializes dependencies and runs the workflow
+emulation.
 
-Точка входа (cmd/checkout): Инициализирует зависимости и запускает эмуляцию
-рабочего процесса.
+COMPENSATION MECHANISM
 
-МЕХАНИЗМ КОМПЕНСАЦИИ
+The orchestrator's logic ensures the following conditions are met:
 
-Алгоритм работы оркестратора гарантирует соблюдение следующих условий:
+Steps are executed in a strict sequential order.
 
-Шаги выполняются строго последовательно.
+Upon successful execution, a step is added to the stack of completed actions.
 
-При успешном выполнении шага он добавляется в стек исполненных действий.
+If an error occurs at any stage, execution is immediately halted.
 
-При возникновении ошибки на любом этапе выполнение прерывается.
+The orchestrator iterates through the stack of completed actions in reverse
+order (LIFO - Last-In-First-Out) and invokes the Compensate method for
+each finished step.
 
-Оркестратор итерирует стек исполненных действий в обратном порядке (LIFO)
-и вызывает метод Compensate для каждого завершенного шага.
+Compensation is not invoked for the step that caused the failure, as it is
+assumed the action did not complete successfully.
 
-Для шага, на котором произошла ошибка, компенсация не вызывается (согласно
-спецификации паттерна, предполагается, что действие не было завершено).
-
-СТРУКТУРА ПРОЕКТА
+PROJECT STRUCTURE
 
 internal/saga/
-step.go - Интерфейс Step с методами Name, Execute, Compensate.
-orchestrator.go - Логика управления транзакцией и обработки откатов.
+step.go - Step interface with Name, Execute, and Compensate methods.
+orchestrator.go - Logic for transaction management and rollback handling.
 internal/service/
-checkout_saga.go - Высокоуровневый сервис для сборки и запуска саги.
-payment.go - Доменная логика обработки платежей.
-inventory.go - Доменная логика резервирования товаров.
-shipping.go - Доменная логика организации доставки.
+checkout_saga.go - High-level service for assembling and running the saga.
+payment.go - Domain logic for payment processing.
+inventory.go - Domain logic for inventory reservation.
+shipping.go - Domain logic for logistics and shipping.
 cmd/checkout/
-main.go - Запуск приложения и демонстрация сценариев.
+main.go - Application entry point and scenario demonstration.
 
-ИНСТРУКЦИЯ ПО ЗАПУСКУ
+RUNNING THE APPLICATION
 
-Для запуска эмуляции необходимо наличие установленного инструментария Go 1.20+.
+To run the emulation, ensure that Go version 1.20+ is installed.
 
-Команда для запуска:
+Command to run:
 go run cmd/checkout/main.go
 
-В процессе выполнения в стандартный вывод (stdout) будут направлены логи,
-демонстрирующие успешный проход всех этапов, а также сценарий с возникновением
-ошибки и последующим автоматическим откатом ранее выполненных действий.
+During execution, logs will be sent to standard output (stdout), demonstrating
+a successful end-to-end flow as well as a failure scenario with an automatic
+rollback of previously completed actions.
 
-ТЕХНИЧЕСКИЕ ОСОБЕННОСТИ РЕАЛИЗАЦИИ
+TECHNICAL HIGHLIGHTS
 
-Использование интерфейсов: Обеспечивает слабую связность компонентов и
-упрощает модульное тестирование (Unit Testing) через создание мок-объектов.
+Interface-Driven Design: Ensures low coupling between components and
+simplifies Unit Testing through the use of mock objects.
 
-Контроль контекста: Все методы принимают context.Context, что позволяет
-корректно обрабатывать таймауты и сигналы отмены на любом этапе выполнения.
+Context Management: All methods accept context.Context, allowing for proper
+handling of timeouts and cancellation signals throughout the lifecycle.
 
-Обратный порядок: Реализация отката в обратном порядке минимизирует риски
-согласованности ресурсов, зависящих друг от друга.
+Reverse Order Execution: Implementing rollbacks in reverse order minimizes
+risks associated with resource dependencies and race conditions.
